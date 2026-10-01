@@ -3,16 +3,28 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { deliveryApi } from '../../services'
 import { getSocket } from '../../lib/socket'
 import { usePageMeta } from '../../hooks/usePageMeta'
-import { greeting, formatDistance } from '../../lib/format'
+import { greeting, formatDistance, formatINR } from '../../lib/format'
 import { useAuth } from '../../context/AuthContext'
 import Button from '../../components/ui/Button'
 import EmptyState from '../../components/ui/EmptyState'
+import { useToast } from '../../context/ToastContext'
 
 export default function DeliveryDashboardPage() {
   usePageMeta('Delivery · NEARE')
   const { user } = useAuth()
+  const toast = useToast()
   const queryClient = useQueryClient()
   const dashboard = useQuery({ queryKey: ['delivery-dashboard'], queryFn: deliveryApi.dashboard, refetchInterval: 10000 })
+  const offers = useQuery({ queryKey: ['delivery-offers'], queryFn: deliveryApi.offers, refetchInterval: 8000 })
+  const accept = useMutation({
+    mutationFn: deliveryApi.accept,
+    onSuccess: () => {
+      toast.success('Delivery accepted')
+      queryClient.invalidateQueries({ queryKey: ['delivery-offers'] })
+      queryClient.invalidateQueries({ queryKey: ['delivery-dashboard'] })
+    },
+    onError: (error) => toast.error(error.message),
+  })
   const online = useMutation({
     mutationFn: (isOnline) => deliveryApi.setOnline(isOnline),
     onSuccess: (result) => {
@@ -53,6 +65,24 @@ export default function DeliveryDashboardPage() {
         <article className="rounded-2xl border border-line bg-white p-4"><p className="text-sm text-muted">Today’s earnings</p><p className="text-2xl font-semibold">₹{data?.todayEarnings ?? '—'}</p></article>
         <article className="rounded-2xl border border-line bg-white p-4"><p className="text-sm text-muted">Open offers</p><p className="text-2xl font-semibold">{data?.openOffers ?? '—'}</p></article>
       </div>
+      <section className="mt-6">
+        <h2 className="font-semibold">Delivery offers</h2>
+        {data?.isOnline && offers.data?.offers?.length ? (
+          <ul className="mt-3 space-y-3">
+            {offers.data.offers.map((offer) => (
+              <li key={offer.deliveryId} className="border border-line bg-white p-4">
+                <p className="font-medium">{offer.shopName}</p>
+                <p className="mt-1 text-sm text-muted">Pickup: {offer.shopArea}</p>
+                <p className="text-sm text-muted">Drop area: {offer.destinationArea}</p>
+                <p className="mt-2 text-sm">{formatDistance(offer.distanceKm)} · Estimated earnings {formatINR(offer.earningsEstimate)}</p>
+                <Button className="mt-3" disabled={accept.isPending} onClick={() => accept.mutate(offer.deliveryId)}>Accept</Button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-3 text-sm text-muted">{data?.isOnline ? 'No nearby offers right now.' : 'Go online to receive delivery requests.'}</p>
+        )}
+      </section>
       <section className="mt-6">
         <h2 className="font-semibold">Active delivery</h2>
         {data?.active ? (

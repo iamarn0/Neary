@@ -68,5 +68,7 @@ const orderSchema = new mongoose.Schema(
 
 orderSchema.index({ customer: 1, createdAt: -1 })
 orderSchema.index({ shop: 1, orderStatus: 1, createdAt: -1 })
+orderSchema.index({ orderStatus: 1, createdAt: -1 })
+orderSchema.index({ 'items.product': 1, orderStatus: 1 })
 
 export default mongoose.model('Order', orderSchema)

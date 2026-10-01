@@ -20,10 +20,10 @@ export function errorHandler(err, req, res, next) {
   }
 
   const status = err.statusCode || (err.name === 'ValidationError' ? 400 : err.name === 'CastError' ? 400 : 500)
-  const message =
-    status >= 500
+  const message = err.publicMessage
+    || (status >= 500
       ? 'Something went wrong. Please try again.'
-      : err.message || 'Unable to complete that request.'
+      : err.message || 'Unable to complete that request.')
   const code = err.code && typeof err.code === 'string' ? err.code : status >= 500 ? 'INTERNAL' : undefined
 
   if (status >= 500) {

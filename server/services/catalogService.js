@@ -112,6 +112,82 @@ function matchesTerm(regex, ...values) {
   return values.some((value) => regex.test(value || ''))
 }
 
+function pageArgs(page, limit) {
+  const pageNumber = Math.max(1, Math.floor(Number(page) || 1))
+  const pageSize = Math.min(20, Math.max(1, Math.floor(Number(limit) || 12)))
+  return { pageNumber, pageSize }
+}
+
+async function shopsNear(coords, shopQuery, radius) {
+  const geoRows = await Shop.aggregate([
+    {
+      $geoNear: {
+        near: { type: 'Point', coordinates: [coords.lng, coords.lat] },
+        distanceField: 'distanceMeters',
+        maxDistance: radius,
+        spherical: true,
+        query: shopQuery,
+      },
+    },
+    { $limit: 40 },
+    { $project: { distanceMeters: 1 } },
+  ])
+  const ids = geoRows.map((row) => row._id)
+  const populated = ids.length
+    ? await Shop.find({ _id: { $in: ids } }).populate('category', 'name slug').populate('categories', 'name slug')
+    : []
+  const byId = new Map(populated.map((shop) => [String(shop._id), shop]))
+  return geoRows.map((row) => {
+    const shop = byId.get(String(row._id))
+    if (!shop) return null
+    return { shop: withOpenFlag(shop), distance: metersToKm(row.distanceMeters) }
+  }).filter(Boolean)
+}
+
+const skippedOrders = ['CANCELLED', 'REJECTED']
+
+export async function nearbyProducts({ longitude, latitude, radius = 12000, limit = 8 }) {
+  const coords = assertCoordinates(longitude, latitude)
+  if (coords.error) throw coords.error
+  const rows = await shopsNear(
+    coords,
+    { approvalStatus: 'APPROVED' },
+    Math.min(20000, Math.max(500, Number(radius) || 12000)),
+  )
+  const shopIds = rows.map((row) => row.shop._id)
+  if (!shopIds.length) return []
+  const byShop = new Map(rows.map((row) => [String(row.shop._id), row]))
+  const counts = await Order.aggregate([
+    { $match: { shop: { $in: shopIds }, orderStatus: { $nin: skippedOrders } } },
+    { $unwind: '$items' },
+    { $group: { _id: '$items.product', orders: { $sum: 1 } } },
+    { $sort: { orders: -1 } },
+    { $limit: 24 },
+  ])
+  const rankedIds = counts.map((row) => row._id).filter(Boolean)
+  const orderCount = new Map(counts.map((row) => [String(row._id), row.orders]))
+  const products = await Product.find({
+    shop: { $in: shopIds },
+    isAvailable: true,
+    stock: { $gt: 0 },
+    ...(rankedIds.length ? { _id: { $in: rankedIds } } : {}),
+  }).limit(rankedIds.length ? 24 : Number(limit) || 8)
+  return products
+    .map((product) => {
+      const row = byShop.get(String(product.shop))
+      if (!row) return null
+      return {
+        product,
+        shop: row.shop,
+        distance: row.distance,
+        orders: orderCount.get(String(product._id)) || 0,
+      }
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.orders - a.orders || Number(b.shop.isOpen) - Number(a.shop.isOpen) || (a.distance ?? 99) - (b.distance ?? 99))
+    .slice(0, Number(limit) || 8)
+}
+
 export async function searchMarketplace({
   q,
   longitude,
@@ -122,14 +198,23 @@ export async function searchMarketplace({
   open,
   minPrice,
   maxPrice,
+  sort = 'relevance',
+  radius = 12000,
   page = 1,
-  limit = 20,
+  limit = 12,
 }) {
   const coords = assertCoordinates(longitude, latitude)
   if (coords.error) throw coords.error
-
+  const { pageNumber, pageSize } = pageArgs(page, limit)
   const term = String(q || '').trim()
-  const regex = term ? new RegExp(escapeRegex(term), 'i') : null
+  const empty = {
+    shops: [],
+    products: [],
+    suggestions: [],
+    pagination: { page: 1, limit: pageSize, total: 0, pages: 1, shopTotal: 0 },
+  }
+  if (!term) return empty
+
   const shopQuery = { approvalStatus: 'APPROVED' }
   if (pickup === 'true' || pickup === true) shopQuery.pickupAvailable = true
   if (delivery === 'true' || delivery === true) shopQuery.deliveryAvailable = true
@@ -138,75 +223,98 @@ export async function searchMarketplace({
     shopQuery.$or = [{ category: categoryId }, { categories: categoryId }]
   }
 
-  const shops = await Shop.find(shopQuery).populate('category', 'name slug').populate('categories', 'name slug')
-  let rows = shops.map((shop) => {
-    const plain = withOpenFlag(shop)
-    const coordinates = shop.location?.coordinates
-    const distance = Array.isArray(coordinates) && coordinates.length === 2
-      ? Math.round(haversineKm([coords.lng, coords.lat], coordinates) * 100) / 100
-      : null
-    return { shop: plain, distance }
-  })
+  let rows = await shopsNear(coords, shopQuery, Math.min(20000, Math.max(500, Number(radius) || 12000)))
   if (open === 'true' || open === true) rows = rows.filter((row) => row.shop.isOpen)
 
-  const shopMatches = regex
-    ? rows.filter((row) => matchesTerm(
+  const regex = new RegExp(escapeRegex(term), 'i')
+  const shopMatches = rows
+    .filter((row) => matchesTerm(
       regex,
       row.shop.name,
       row.shop.description,
       row.shop.category?.name,
       ...(row.shop.categories || []).map((item) => item?.name),
-    )).sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity))
-    : []
+    ))
+    .sort((a, b) => Number(b.shop.isOpen) - Number(a.shop.isOpen) || (a.distance ?? 99) - (b.distance ?? 99))
 
   const shopIds = rows.map((row) => row.shop._id)
-  const shopById = new Map(rows.map((row) => [String(row.shop._id), row.shop]))
-  const distanceByShop = new Map(rows.map((row) => [String(row.shop._id), row.distance]))
-  const productFilter = { shop: { $in: shopIds }, isAvailable: true }
-  if (regex) {
-    const categories = await Category.find({ name: regex })
-    productFilter.$or = [{ name: regex }]
-    if (categories.length) productFilter.$or.push({ category: { $in: categories.map((item) => item._id) } })
-  }
-  if (minPrice !== undefined && minPrice !== '' && Number.isFinite(Number(minPrice))) {
-    productFilter.price = { ...(productFilter.price || {}), $gte: Number(minPrice) }
-  }
-  if (maxPrice !== undefined && maxPrice !== '' && Number.isFinite(Number(maxPrice))) {
-    productFilter.price = { ...(productFilter.price || {}), $lte: Number(maxPrice) }
+  if (!shopIds.length) {
+    return { ...empty, pagination: { ...empty.pagination, page: pageNumber } }
   }
 
-  const pageNumber = Math.max(1, Math.floor(Number(page) || 1))
-  const pageSize = Math.min(40, Math.max(1, Math.floor(Number(limit) || 20)))
-  const products = shopIds.length
-    ? await Product.find(productFilter).populate('category', 'name slug').limit(80)
+  const categories = await Category.find({ name: regex }).select('_id')
+  const productMatch = {
+    shop: { $in: shopIds },
+    isAvailable: true,
+    isDeleted: { $ne: true },
+    $or: [{ name: regex }],
+  }
+  if (categories.length) productMatch.$or.push({ category: { $in: categories.map((item) => item._id) } })
+  const price = {}
+  if (minPrice !== undefined && minPrice !== '' && Number.isFinite(Number(minPrice))) price.$gte = Number(minPrice)
+  if (maxPrice !== undefined && maxPrice !== '' && Number.isFinite(Number(maxPrice))) price.$lte = Number(maxPrice)
+  if (Object.keys(price).length) productMatch.price = price
+
+  const openIds = rows.filter((row) => row.shop.isOpen).map((row) => row.shop._id)
+  const distanceBranches = rows.map((row) => ({
+    case: { $eq: ['$shop', row.shop._id] },
+    then: row.distance ?? 999,
+  }))
+  const sortStage = sort === 'price'
+    ? { price: 1, distance: 1, name: 1 }
+    : sort === 'distance'
+      ? { distance: 1, name: 1 }
+      : { shopOpen: -1, distance: 1, name: 1 }
+
+  const [facet] = await Product.aggregate([
+    { $match: productMatch },
+    {
+      $addFields: {
+        distance: { $switch: { branches: distanceBranches, default: 999 } },
+        shopOpen: { $cond: [{ $in: ['$shop', openIds] }, 1, 0] },
+      },
+    },
+    { $sort: sortStage },
+    {
+      $facet: {
+        page: [{ $skip: (pageNumber - 1) * pageSize }, { $limit: pageSize }, { $project: { _id: 1, shop: 1 } }],
+        meta: [{ $count: 'total' }],
+      },
+    },
+  ])
+
+  const pageDocs = facet?.page || []
+  const total = facet?.meta?.[0]?.total || 0
+  const hydrated = pageDocs.length
+    ? await Product.find({ _id: { $in: pageDocs.map((doc) => doc._id) } }).populate('category', 'name slug')
     : []
-  const productResults = products
-    .map((product) => ({
-      product,
-      shop: shopById.get(String(product.shop)),
-      distance: distanceByShop.get(String(product.shop)) ?? null,
-    }))
-    .filter((row) => row.shop)
-    .sort((a, b) => {
-      const openBoost = Number(b.shop?.isOpen) - Number(a.shop?.isOpen)
-      if (openBoost) return openBoost
-      return (a.distance ?? Infinity) - (b.distance ?? Infinity)
-    })
+  const productById = new Map(hydrated.map((item) => [String(item._id), item]))
+  const shopById = new Map(rows.map((row) => [String(row.shop._id), row]))
+  const products = pageDocs.map((doc) => {
+    const product = productById.get(String(doc._id))
+    const row = shopById.get(String(doc.shop))
+    if (!product || !row) return null
+    return { product, shop: row.shop, distance: row.distance }
+  }).filter(Boolean)
 
-  const start = (pageNumber - 1) * pageSize
+  const suggestions = [...new Set([
+    ...products.slice(0, 4).map((row) => row.product.name),
+    ...shopMatches.slice(0, 4).map((row) => row.shop.name),
+  ])].slice(0, 6)
+
   return {
-    shops: shopMatches.slice(0, pageSize),
-    products: productResults.slice(start, start + pageSize),
+    shops: shopMatches.slice(0, pageSize).map(({ shop, distance }) => ({ shop, distance })),
+    products,
+    suggestions,
     pagination: {
       page: pageNumber,
       limit: pageSize,
-      total: productResults.length,
-      pages: Math.max(1, Math.ceil(productResults.length / pageSize)),
+      total,
+      pages: Math.max(1, Math.ceil(total / pageSize)),
+      shopTotal: shopMatches.length,
     },
   }
 }
-
-const skippedOrders = ['CANCELLED', 'REJECTED']
 
 function shopDistance(shop, coords) {
   const coordinates = shop?.location?.coordinates
@@ -221,7 +329,7 @@ export async function productInsights({ product, customerId, longitude, latitude
   since.setDate(since.getDate() - 30)
   const productId = String(product._id)
 
-  const [personal, baskets, recent, shelf] = await Promise.all([
+  const [personal, pairRows, trendRows, ownRows, demandCount, shelf] = await Promise.all([
     customerId
       ? Order.find({
         customer: customerId,
@@ -229,19 +337,33 @@ export async function productInsights({ product, customerId, longitude, latitude
         'items.product': product._id,
       }).sort({ createdAt: -1 }).limit(6).select('orderNumber items orderStatus createdAt')
       : [],
-    Order.find({
-      orderStatus: { $nin: skippedOrders },
-      'items.product': product._id,
-    }).select('items').limit(200),
-    Order.find({
-      orderStatus: { $nin: skippedOrders },
-      createdAt: { $gte: since },
-    }).select('items').limit(300),
+    Order.aggregate([
+      { $match: { orderStatus: { $nin: skippedOrders }, 'items.product': product._id } },
+      { $unwind: '$items' },
+      { $match: { 'items.product': { $ne: product._id } } },
+      { $group: { _id: '$items.product', times: { $sum: 1 } } },
+      { $sort: { times: -1 } },
+      { $limit: 6 },
+    ]),
+    Order.aggregate([
+      { $match: { orderStatus: { $nin: skippedOrders }, createdAt: { $gte: since } } },
+      { $unwind: '$items' },
+      { $group: { _id: '$items.product', orders: { $sum: 1 }, quantity: { $sum: '$items.quantity' } } },
+      { $sort: { quantity: -1, orders: -1 } },
+      { $limit: 8 },
+    ]),
+    Order.aggregate([
+      { $match: { orderStatus: { $nin: skippedOrders }, createdAt: { $gte: since }, 'items.product': product._id } },
+      { $unwind: '$items' },
+      { $match: { 'items.product': product._id } },
+      { $group: { _id: null, orders: { $sum: 1 }, quantity: { $sum: '$items.quantity' } } },
+    ]),
+    Order.countDocuments({ orderStatus: { $nin: skippedOrders }, 'items.product': product._id }),
     Product.find({
       _id: { $ne: product._id },
       isAvailable: true,
       $or: [{ shop: product.shop }, { category: product.category?._id || product.category }],
-    }).limit(12),
+    }).limit(8),
   ])
 
   const history = personal.map((order) => {
@@ -256,32 +378,8 @@ export async function productInsights({ product, customerId, longitude, latitude
     }
   })
 
-  const pairCounts = new Map()
-  baskets.forEach((order) => {
-    const seen = new Set()
-    order.items.forEach((item) => {
-      if (!item.product || String(item.product) === productId || seen.has(String(item.product))) return
-      seen.add(String(item.product))
-      const key = String(item.product)
-      pairCounts.set(key, (pairCounts.get(key) || 0) + 1)
-    })
-  })
-
-  const trendCounts = new Map()
-  recent.forEach((order) => {
-    const seen = new Set()
-    order.items.forEach((item) => {
-      if (!item.product || seen.has(String(item.product))) return
-      seen.add(String(item.product))
-      const key = String(item.product)
-      const current = trendCounts.get(key) || { orders: 0, quantity: 0 }
-      current.orders += 1
-      current.quantity += Number(item.quantity) || 0
-      trendCounts.set(key, current)
-    })
-  })
-
-  const ranked = [...trendCounts.entries()].sort((a, b) => b[1].quantity - a[1].quantity || b[1].orders - a[1].orders)
+  const pairCounts = new Map(pairRows.map((row) => [String(row._id), row.times]))
+  const ranked = trendRows.map((row) => [String(row._id), { orders: row.orders, quantity: row.quantity }])
   const rank = ranked.findIndex(([id]) => id === productId) + 1
   const ids = [...new Set([
     ...pairCounts.keys(),
@@ -342,12 +440,12 @@ export async function productInsights({ product, customerId, longitude, latitude
     })
     .filter(Boolean)
 
-  const own = trendCounts.get(productId) || { orders: 0, quantity: 0 }
+  const own = ownRows[0] || { orders: 0, quantity: 0 }
   return {
     history,
     bought: history.reduce((sum, row) => sum + row.quantity, 0),
     demand: {
-      orders: baskets.length,
+      orders: demandCount,
       monthOrders: own.orders,
       monthQuantity: own.quantity,
       rank: rank || null,

@@ -4,7 +4,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import { drawRoute } from './RouteLayer'
 import { markerElement } from './MapMarker'
 
-const styleUrl = import.meta.env.VITE_MAP_STYLE_URL
+const styleUrl = import.meta.env.VITE_MAP_STYLE_URL || 'https://tiles.openfreemap.org/styles/liberty'
 
 function circleRing(center, kilometers, steps = 72) {
   const [lng, lat] = center

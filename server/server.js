@@ -1,14 +1,19 @@
 import 'dotenv/config'
+import fs from 'fs'
 import http from 'http'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import express from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
+import { clientOrigin } from './config/clientOrigin.js'
 import { connectDb } from './config/db.js'
+import User from './models/User.js'
+import { seedDemo } from './seed/seed.js'
 import routes from './routes/index.js'
 import { errorHandler, notFound } from './middleware/errorHandler.js'
 import { requestLogger } from './middleware/requestLogger.js'
+import { cloudinaryConfigured } from './middleware/upload.js'
 import { initSocket } from './sockets/index.js'
 import { resumeDemoTracking } from './services/demoTracking.js'
 
@@ -21,8 +26,22 @@ if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 16) {
   process.exit(1)
 }
 
-app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }))
-app.use(cors({ origin: process.env.CLIENT_URL || 'http://localhost:5173', credentials: true }))
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  contentSecurityPolicy: {
+    useDefaults: true,
+    directives: {
+      upgradeInsecureRequests: null,
+      scriptSrc: ["'self'", 'blob:'],
+      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+      fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
+      imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+      connectSrc: ["'self'", 'https:', 'wss:'],
+      workerSrc: ["'self'", 'blob:'],
+    },
+  },
+}))
+app.use(cors({ origin: clientOrigin(), credentials: true }))
 app.use(express.json({ limit: '1mb' }))
 app.use(requestLogger)
 
@@ -34,13 +53,34 @@ app.get('/api/health', (req, res) => {
 })
 
 app.use('/api', routes)
+
+const clientDist = path.join(root, '..', 'client', 'dist')
+if (fs.existsSync(path.join(clientDist, 'index.html'))) {
+  app.use(express.static(clientDist))
+  app.use((req, res, next) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return next()
+    if (req.path.startsWith('/api') || req.path.startsWith('/uploads') || req.path.startsWith('/socket.io')) return next()
+    res.sendFile(path.join(clientDist, 'index.html'))
+  })
+}
+
 app.use(notFound)
 app.use(errorHandler)
 
 const io = initSocket(server)
 app.set('io', io)
 
+if (process.env.NODE_ENV === 'production' && !cloudinaryConfigured()) {
+  console.error('Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET.')
+  process.exit(1)
+}
+console.log(`Image storage: ${cloudinaryConfigured() ? 'cloudinary' : 'local disk'}`)
+
 await connectDb()
+if (process.env.SEED_IF_EMPTY === 'true' && (await User.countDocuments()) === 0) {
+  console.log('Database is empty. Seeding demo data.')
+  await seedDemo()
+}
 await resumeDemoTracking(io)
 
 server.listen(port, () => {

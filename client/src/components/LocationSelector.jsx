@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { addressApi, geoApi } from '../services'
@@ -11,21 +11,36 @@ import LocationPicker from './maps/LocationPicker'
 export default function LocationSelector({ onDone }) {
   const { setLocation } = useLocationSelection()
   const geo = useGeolocation()
+  const asked = useRef(false)
   const [query, setQuery] = useState('')
   const [places, setPlaces] = useState([])
   const [manualOpen, setManualOpen] = useState(false)
-  const [manual, setManual] = useState({ area: '', city: 'Kolkata', coordinates: null })
+  const [manual, setManual] = useState({
+    fullName: '',
+    flat: '',
+    building: '',
+    area: '',
+    city: 'Kolkata',
+    state: 'West Bengal',
+    pinCode: '',
+    landmark: '',
+    coordinates: null,
+  })
   const [message, setMessage] = useState('')
   const addresses = useQuery({ queryKey: ['addresses'], queryFn: addressApi.list })
   const saved = [...(addresses.data?.addresses || [])].sort((a, b) => Number(b.isDefault) - Number(a.isDefault))
 
   useEffect(() => {
+    if (!asked.current) return
     if (geo.status === 'allowed' && geo.coordinates) {
+      asked.current = false
       setLocation({ label: 'Current location', coordinates: geo.coordinates, area: '', city: '' })
       onDone?.()
     }
     if (geo.status === 'denied') setMessage('Location permission was denied. Search or enter an address instead.')
-    if (geo.status === 'unavailable') setMessage('Location is unavailable on this device. Search or enter an address instead.')
+    if (geo.status === 'unavailable' || geo.status === 'unsupported' || geo.status === 'timeout') {
+      setMessage('Location is unavailable. Search or enter an address instead.')
+    }
   }, [geo.status, geo.coordinates, setLocation, onDone])
 
   useEffect(() => {
@@ -70,7 +85,7 @@ export default function LocationSelector({ onDone }) {
         <h2 className="text-xl font-semibold">Where are you shopping from?</h2>
         <p className="mt-1 text-sm text-muted">Nearby shops are based on this location.</p>
       </div>
-      <Button onClick={geo.request} disabled={geo.status === 'loading'}>
+      <Button onClick={() => { asked.current = true; setMessage(''); geo.request() }} disabled={geo.status === 'loading'}>
         {geo.status === 'loading' ? 'Finding location…' : 'Use my current location'}
       </Button>
       {message ? <p className="text-sm text-muted">{message}</p> : null}
@@ -127,27 +142,37 @@ function ManualAddress({ manual, setManual, setMessage, setLocation, onDone }) {
   return (
     <div className="space-y-3">
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Area"><TextInput value={manual.area} onChange={(event) => setManual({ ...manual, area: event.target.value })} /></Field>
-          <Field label="City"><TextInput value={manual.city} onChange={(event) => setManual({ ...manual, city: event.target.value })} /></Field>
+          {[
+            ['fullName', 'Name'],
+            ['flat', 'Flat / House'],
+            ['building', 'Building / Society'],
+            ['area', 'Area'],
+            ['city', 'City'],
+            ['state', 'State'],
+            ['pinCode', 'PIN'],
+            ['landmark', 'Landmark'],
+          ].map(([key, label]) => (
+            <Field key={key} label={label}>
+              <TextInput value={manual[key]} onChange={(event) => setManual({ ...manual, [key]: event.target.value })} />
+            </Field>
+          ))}
         </div>
         <LocationPicker value={manual.coordinates} onChange={(coordinates) => setManual({ ...manual, coordinates })} />
         <Button
           variant="ghost"
           onClick={() => {
-            if (!manual.area || !manual.coordinates) {
-              setMessage('Add an area and a map pin to save this address.')
+            if (!manual.area || !manual.city || !manual.coordinates) {
+              setMessage('Add an area, city, and a map pin.')
               return
             }
             setLocation({
-              label: `${manual.area}, ${manual.city}`,
-              area: manual.area,
-              city: manual.city,
-              coordinates: manual.coordinates,
+              label: [manual.area, manual.city].filter(Boolean).join(', '),
+              ...manual,
             })
             onDone?.()
           }}
         >
-          Save this location
+          Use this location
         </Button>
     </div>
   )

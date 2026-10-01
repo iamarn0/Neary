@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
 import { protect, authorize, optionalProtect } from '../middleware/auth.js'
-import { assertImageSignature, uploadImage } from '../middleware/upload.js'
+import { assertImageSignature, publishImage, uploadImage } from '../middleware/upload.js'
 import * as auth from '../controllers/authController.js'
 import * as catalog from '../controllers/catalogController.js'
 import * as cart from '../controllers/cartController.js'
@@ -33,6 +33,7 @@ router.patch('/auth/password', protect, auth.updatePassword)
 router.get('/geo/suggest', geo.suggest)
 router.get('/categories', catalog.listCategories)
 router.get('/shops/nearby', catalog.listNearby)
+router.get('/shops/nearby/products', catalog.listNearbyProducts)
 router.get('/shops/favorites', protect, authorize('CUSTOMER'), catalog.listFavorites)
 router.get('/shops/:id', catalog.getShop)
 router.get('/shops/:id/products', catalog.getShopProducts)
@@ -81,14 +82,14 @@ router.patch('/notifications/:id/read', protect, notes.markRead)
 const shop = Router()
 shop.use(protect, authorize('SHOP_OWNER'))
 shop.get('/', shopOwner.myShop)
-shop.post('/register', uploadImage.single('logo'), assertImageSignature, shopOwner.registerShop)
-shop.patch('/settings', uploadImage.single('logo'), assertImageSignature, shopOwner.updateShop)
+shop.post('/register', uploadImage.single('logo'), assertImageSignature, publishImage, shopOwner.registerShop)
+shop.patch('/settings', uploadImage.single('logo'), assertImageSignature, publishImage, shopOwner.updateShop)
 shop.get('/dashboard', shopOwner.dashboard)
 shop.get('/orders', shopOwner.listOrders)
 shop.post('/orders/:id/actions', shopOwner.actOnOrder)
 shop.get('/products', shopOwner.listProducts)
-shop.post('/products', uploadImage.single('image'), assertImageSignature, shopOwner.createProduct)
-shop.patch('/products/:id', uploadImage.single('image'), assertImageSignature, shopOwner.updateProduct)
+shop.post('/products', uploadImage.single('image'), assertImageSignature, publishImage, shopOwner.createProduct)
+shop.patch('/products/:id', uploadImage.single('image'), assertImageSignature, publishImage, shopOwner.updateProduct)
 shop.delete('/products/:id', shopOwner.deleteProduct)
 shop.get('/inventory', shopOwner.inventory)
 shop.post('/inventory/:id', shopOwner.addStock)

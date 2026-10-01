@@ -7,7 +7,7 @@ export default function CartConflict({ open, currentShop, nextShop, onKeep, onCl
   return (
     <Modal open={open} title="Start a new cart?" onClose={onKeep}>
       <p className="text-sm">Your cart contains items from {current}.</p>
-      <p className="mt-2 text-sm text-muted">Start a new cart with {next}?</p>
+      <p className="mt-2 text-sm text-muted">Starting a new cart for {next} will remove your current items.</p>
       <div className="mt-5 flex justify-end gap-2">
         <Button variant="ghost" onClick={onKeep}>Keep current cart</Button>
         <Button onClick={onClear}>Clear cart</Button>

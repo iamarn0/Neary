@@ -4,7 +4,6 @@ import PublicLayout from './layouts/PublicLayout'
 import CustomerLayout from './layouts/CustomerLayout'
 import DashboardLayout from './layouts/DashboardLayout'
 import ProtectedRoute from './routes/ProtectedRoute'
-import { useAuth } from './context/AuthContext'
 import EmptyState from './components/ui/EmptyState'
 
 const LandingPage = lazy(() => import('./pages/public/LandingPage'))
@@ -31,6 +30,7 @@ const TrackPage = lazy(() => import('./pages/customer/TrackPage'))
 const ProfilePage = lazy(() => import('./pages/customer/ProfilePage'))
 const AddressesPage = lazy(() => import('./pages/customer/AddressesPage'))
 const FavoritesPage = lazy(() => import('./pages/customer/FavoritesPage'))
+const NotificationsPage = lazy(() => import('./pages/customer/NotificationsPage'))
 const LoginPage = lazy(() => import('./pages/auth/LoginPage'))
 const RegisterPage = lazy(() => import('./pages/auth/RegisterPage'))
 const ShopRegisterPage = lazy(() => import('./pages/shop/ShopRegisterPage'))
@@ -44,6 +44,7 @@ const DeliveryDashboardPage = lazy(() => import('./pages/delivery/DeliveryDashbo
 const ActiveDeliveryPage = lazy(() => import('./pages/delivery/ActiveDeliveryPage'))
 const DeliveryHistoryPage = lazy(() => import('./pages/delivery/DeliveryHistoryPage'))
 const EarningsPage = lazy(() => import('./pages/delivery/EarningsPage'))
+const DeliveryProfilePage = lazy(() => import('./pages/delivery/DeliveryProfilePage'))
 const AdminDashboardPage = lazy(() => import('./pages/admin/AdminDashboardPage'))
 const AdminOrdersPage = lazy(() => import('./pages/admin/AdminPages').then((module) => ({ default: module.AdminOrdersPage })))
 const AdminProductsPage = lazy(() => import('./pages/admin/AdminPages').then((module) => ({ default: module.AdminProductsPage })))
@@ -84,18 +85,6 @@ const adminNav = [
   { to: '/admin/reports', label: 'Reports' },
   { to: '/admin/settings', label: 'Settings' },
 ]
-
-function DeliveryProfilePage() {
-  const { user } = useAuth()
-  return (
-    <div>
-      <h1 className="text-2xl font-semibold">Profile</h1>
-      <p className="mt-3 text-sm">{user?.name}</p>
-      <p className="text-sm text-muted">{user?.email}</p>
-      <p className="text-sm text-muted">{user?.phone}</p>
-    </div>
-  )
-}
 
 function NotFound() {
   return <EmptyState title="Page not found" body="That NEARE page does not exist." />
@@ -141,6 +130,7 @@ export default function App() {
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/addresses" element={<AddressesPage />} />
           <Route path="/favorites" element={<FavoritesPage />} />
+          <Route path="/notifications" element={<NotificationsPage />} />
         </Route>
       </Route>
 

@@ -14,15 +14,20 @@ function readSaved() {
 
 export function LocationProvider({ children }) {
   const [location, setLocationState] = useState(readSaved)
+  const [pickerToken, setPickerToken] = useState(0)
 
   const value = useMemo(() => ({
     location,
+    pickerToken,
+    openPicker() {
+      setPickerToken((token) => token + 1)
+    },
     setLocation(next) {
       setLocationState(next)
       if (next) localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
       else localStorage.removeItem(STORAGE_KEY)
     },
-  }), [location])
+  }), [location, pickerToken])
 
   return <LocationContext.Provider value={value}>{children}</LocationContext.Provider>
 }

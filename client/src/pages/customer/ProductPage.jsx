@@ -158,14 +158,25 @@ export default function ProductPage() {
         </section>
       ) : null}
 
-      {insights?.suggestions?.length ? (
+      {insights?.suggestions?.some((row) => row.note === 'Also at this shop') ? (
         <section className="mt-8">
           <h2 className="font-semibold">Popular in this shop</h2>
-          <p className="mt-1 text-sm text-muted">From this shop and the same category.</p>
+          <p className="mt-1 text-sm text-muted">Other available items from the same shop.</p>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            {insights.suggestions.map((row) => (
+            {insights.suggestions.filter((row) => row.note === 'Also at this shop').map((row) => (
+              <ProductCard key={row.product._id} product={row.product} shop={row.shop} distance={row.distance} />
+            ))}
+          </div>
+        </section>
+      ) : null}
+      {insights?.suggestions?.some((row) => row.note !== 'Also at this shop') ? (
+        <section className="mt-8">
+          <h2 className="font-semibold">Related products</h2>
+          <p className="mt-1 text-sm text-muted">Same category, from nearby shops.</p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {insights.suggestions.filter((row) => row.note !== 'Also at this shop').map((row) => (
               <div key={row.product._id}>
-                <ProductCard product={row.product} shop={row.shop} distance={row.distance != null ? formatDistance(row.distance) : null} />
+                <ProductCard product={row.product} shop={row.shop} distance={row.distance} />
                 <p className="mt-1 px-1 text-xs text-muted">{row.note}</p>
               </div>
             ))}

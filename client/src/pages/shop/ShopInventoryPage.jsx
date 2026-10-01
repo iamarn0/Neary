@@ -9,8 +9,16 @@ import Button from '../../components/ui/Button'
 import Modal from '../../components/ui/Modal'
 import { Field, TextArea, TextInput } from '../../components/ui/Field'
 
-const tone = { IN: 'text-success', LOW: 'text-brand', OUT: 'text-danger' }
 const label = { IN: 'In stock', LOW: 'Low stock', OUT: 'Out of stock' }
+
+function movementLabel(movement) {
+  const orderNo = movement.order?.orderNumber
+  if (movement.type === 'STOCK_RECEIVED') return 'Stock received'
+  if (movement.type === 'ORDER_RESERVED') return orderNo ? `Order ${orderNo}` : 'Order reserved'
+  if (movement.type === 'ORDER_CANCELLED') return orderNo ? `Order ${orderNo} cancelled` : 'Order cancelled'
+  if (movement.type === 'MANUAL_ADJUSTMENT') return 'Manual adjustment'
+  return String(movement.type || '').toLowerCase().replace(/_/g, ' ')
+}
 const blank = { name: '', description: '', category: '', price: '', salePrice: '', unit: '', barcode: '', stock: '', lowStockThreshold: 5, isAvailable: true }
 
 function sellingPrice(product) {
@@ -95,7 +103,16 @@ export default function ShopInventoryPage() {
     onError: (error) => toast.error(error.message),
   })
   const set = (key) => (event) => setForm({ ...form, [key]: event.target.type === 'checkbox' ? event.target.checked : event.target.value })
-  const products = inventory.data?.products || []
+  const [search, setSearch] = useState('')
+  const [categoryFilter, setCategoryFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
+  const products = (inventory.data?.products || []).filter((product) => {
+    const term = search.trim().toLowerCase()
+    if (term && !product.name.toLowerCase().includes(term)) return false
+    if (categoryFilter && String(product.category) !== categoryFilter && product.category?.name !== categoryFilter) return false
+    if (statusFilter && product.status !== statusFilter) return false
+    return true
+  })
 
   function showPreview(next) {
     if (previewUrl.current) URL.revokeObjectURL(previewUrl.current)
@@ -151,13 +168,29 @@ export default function ShopInventoryPage() {
         </div>
         <Button onClick={openCreate}>Add product</Button>
       </div>
-      <div className="mt-4 overflow-x-auto rounded-2xl border border-line bg-white">
+      <div className="mt-4 flex flex-wrap gap-2">
+        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search products" aria-label="Search inventory" className="min-w-48 flex-1 border border-line bg-white px-3 py-2 text-sm" />
+        <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} aria-label="Category" className="border border-line bg-white px-3 py-2 text-sm">
+          <option value="">All categories</option>
+          {(categories.data?.categories || []).map((category) => <option key={category._id} value={category._id}>{category.name}</option>)}
+        </select>
+        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Stock status" className="border border-line bg-white px-3 py-2 text-sm">
+          <option value="">All stock</option>
+          <option value="IN">In stock</option>
+          <option value="LOW">Low stock</option>
+          <option value="OUT">Out of stock</option>
+        </select>
+      </div>
+      <div className="mt-4 overflow-x-auto border border-line bg-white">
         <table className="w-full min-w-[760px] text-left text-sm">
           <thead className="border-b border-line text-muted">
             <tr>
               <th className="px-4 py-3 font-medium">Product</th>
+              <th className="px-4 py-3 font-medium">Price</th>
               <th className="px-4 py-3 font-medium">Stock</th>
+              <th className="px-4 py-3 font-medium">Threshold</th>
               <th className="px-4 py-3 font-medium">Status</th>
+              <th className="px-4 py-3 font-medium">Updated</th>
               <th className="px-4 py-3 text-right font-medium">Add quantity</th>
               <th className="px-4 py-3 text-right font-medium"> </th>
             </tr>
@@ -170,18 +203,24 @@ export default function ShopInventoryPage() {
                     <Media src={product.image} alt={product.name} className="h-12 w-12 rounded-lg" />
                     <div>
                       <p>{product.name}</p>
-                      <p className="text-xs text-muted">{formatINR(sellingPrice(product))} · {product.unit}{product.barcode ? ` · ${product.barcode}` : ''}</p>
+                      <p className="text-xs text-muted">{product.unit}{product.barcode ? ` · ${product.barcode}` : ''}</p>
                     </div>
                   </div>
                 </td>
+                <td className="px-4 py-3">{formatINR(sellingPrice(product))}</td>
                 <td className="px-4 py-3">{product.stock}</td>
-                <td className={`px-4 py-3 ${tone[product.status]}`}>{label[product.status]}</td>
+                <td className="px-4 py-3">{product.lowStockThreshold}</td>
+                <td className="px-4 py-3">{label[product.status]}</td>
+                <td className="px-4 py-3 text-muted">{product.updatedAt ? new Date(product.updatedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '—'}</td>
                 <td className="px-4 py-3">
-                  <AddQuantity
-                    product={product}
-                    pending={add.isPending && add.variables?.id === product._id}
-                    onAdd={(id, quantity, clear) => add.mutate({ id, quantity, clear })}
-                  />
+                  <div className="flex items-center justify-end gap-2">
+                    <Button variant="ghost" className="px-3 py-2" disabled={add.isPending} onClick={() => add.mutate({ id: product._id, quantity: 10, clear: () => {} })}>+10</Button>
+                    <AddQuantity
+                      product={product}
+                      pending={add.isPending && add.variables?.id === product._id}
+                      onAdd={(id, quantity, clear) => add.mutate({ id, quantity, clear })}
+                    />
+                  </div>
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex justify-end gap-2">
@@ -193,18 +232,24 @@ export default function ShopInventoryPage() {
             ))}
           </tbody>
         </table>
-        {products.length === 0 ? <p className="px-4 py-6 text-sm text-muted">No products yet. Add the first one to start billing.</p> : null}
+        {products.length === 0 ? <p className="px-4 py-6 text-sm text-muted">No inventory items found.</p> : null}
       </div>
       <section className="mt-8">
-        <h2 className="font-semibold">Stock movements</h2>
+        <h2 className="font-semibold">Inventory history</h2>
         <ul className="mt-3 divide-y divide-line border border-line bg-white text-sm">
-          {(inventory.data?.movements || []).map((movement) => (
-            <li key={movement._id} className="flex flex-wrap justify-between gap-2 px-4 py-2">
-              <span>{movement.product?.name || 'Product'} · {String(movement.type).toLowerCase().replace(/_/g, ' ')}</span>
-              <span>{movement.quantity > 0 ? `+${movement.quantity}` : movement.quantity}</span>
-            </li>
-          ))}
-          {!inventory.data?.movements?.length ? <li className="px-4 py-3 text-muted">Adjustments and reservations will show up here.</li> : null}
+          {(inventory.data?.movements || []).map((movement) => {
+            const copy = movementLabel(movement)
+            return (
+              <li key={movement._id} className="flex items-center justify-between gap-3 px-4 py-3">
+                <span>
+                  <span className="block font-medium">{movement.quantity > 0 ? `+${movement.quantity}` : movement.quantity}</span>
+                  <span className="text-muted">{movement.product?.name ? `${movement.product.name} · ` : ''}{copy}</span>
+                </span>
+                <time className="text-xs text-muted">{new Date(movement.createdAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</time>
+              </li>
+            )
+          })}
+          {!inventory.data?.movements?.length ? <li className="px-4 py-3 text-muted">Stock received, orders, and manual adjustments show up here.</li> : null}
         </ul>
       </section>
       <Modal open={open} title={editing ? 'Edit product' : 'Add product'} onClose={() => setOpen(false)}>

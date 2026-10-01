@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-export default function Media({ src, alt, className = '', loading, decoding = 'async' }) {
+export default function Media({ src, alt, className = '', loading = 'lazy', decoding = 'async' }) {
   const [failed, setFailed] = useState(false)
   const [seen, setSeen] = useState(src)
   if (src !== seen) {

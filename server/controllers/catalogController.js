@@ -4,7 +4,7 @@ import Shop from '../models/Shop.js'
 import Review from '../models/Review.js'
 import User from '../models/User.js'
 import { ApiError, asyncHandler, send } from '../utils/http.js'
-import { nearbyShops, productInsights, publicShop, searchMarketplace, shopProducts } from '../services/catalogService.js'
+import { nearbyProducts, nearbyShops, productInsights, publicShop, searchMarketplace, shopProducts } from '../services/catalogService.js'
 import { withOpenFlag } from '../utils/hours.js'
 import { pageMeta, pageParams } from '../utils/pagination.js'
 
@@ -16,6 +16,11 @@ export const listCategories = asyncHandler(async (req, res) => {
 export const listNearby = asyncHandler(async (req, res) => {
   const shops = await nearbyShops(req.query)
   send(res, { shops })
+})
+
+export const listNearbyProducts = asyncHandler(async (req, res) => {
+  const products = await nearbyProducts(req.query)
+  send(res, { products, rankedBy: products.some((row) => row.orders > 0) ? 'orders' : 'availability' })
 })
 
 export const getShop = asyncHandler(async (req, res) => {

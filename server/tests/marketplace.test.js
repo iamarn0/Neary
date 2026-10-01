@@ -11,7 +11,7 @@ import Product from '../models/Product.js'
 import Address from '../models/Address.js'
 import Order from '../models/Order.js'
 import { transitionOrder } from '../services/orderService.js'
-import { nearbyShops } from '../services/catalogService.js'
+import { nearbyShops, searchMarketplace } from '../services/catalogService.js'
 
 process.env.JWT_SECRET = 'test-secret-value-123456'
 process.env.TAX_RATE = '0'
@@ -256,5 +256,19 @@ describe('cart, orders, delivery, reviews, and nearby shops', () => {
     const wider = await nearbyShops({ longitude: 88.41, latitude: 22.58, radius: 20000 })
     const names = wider.map((row) => row.shop.name)
     expect(names.indexOf('FreshMart')).toBeLessThan(names.indexOf('Bake House'))
+  })
+
+  it('searches nearby products in the database and ranks the closer shop first', async () => {
+    await fixture()
+    const found = await searchMarketplace({ q: 'milk', longitude: 88.41, latitude: 22.58, radius: 8000 })
+    expect(found.products).toHaveLength(1)
+    expect(found.products[0].product.name).toBe('Milk')
+    expect(found.products[0].shop.name).toBe('FreshMart')
+    const far = await searchMarketplace({ q: 'milk', longitude: 77.2, latitude: 28.6, radius: 3000 })
+    expect(far.products).toHaveLength(0)
+    const http = await request(app).get('/api/search').query({ q: 'milk', longitude: 88.41, latitude: 22.58 })
+    expect(http.status).toBe(200)
+    expect(http.body.data.products[0].shop.name).toBe('FreshMart')
+    expect(http.body.data.pagination.total).toBe(1)
   })
 })

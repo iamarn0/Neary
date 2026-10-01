@@ -9,6 +9,7 @@ export const authApi = {
 
 export const shopApi = {
   nearby: (params) => api.get('/shops/nearby', { params }).then(data),
+  nearbyProducts: (params) => api.get('/shops/nearby/products', { params }).then(data),
   get: (id, params) => api.get(`/shops/${id}`, { params }).then(data),
   products: (id, params) => api.get(`/shops/${id}/products`, { params }).then(data),
   reviews: (id) => api.get(`/shops/${id}/reviews`).then(data),

@@ -1,0 +1,32 @@
+# Free Render web service. Builds this repo's Dockerfile.
+# Database is a free MongoDB Atlas cluster (MONGO_URI), prompted on first deploy.
+services:
+  - type: web
+    name: neare
+    runtime: docker
+    plan: free
+    region: singapore
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: SEED_IF_EMPTY
+        value: "true"
+      - key: DEMO_TRACKING
+        value: "true"
+      - key: TAX_RATE
+        value: "0"
+      - key: PAYMENT_PROVIDER
+        value: mock
+      - key: GEOCODING_URL
+        value: https://nominatim.openstreetmap.org
+      - key: MONGO_URI
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false

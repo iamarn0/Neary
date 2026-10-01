@@ -42,7 +42,7 @@ function shopBody(body, file) {
   if (body.longitude != null && body.latitude != null && body.longitude !== '' && body.latitude !== '') {
     doc.location = point(body.longitude, body.latitude)
   }
-  if (file) doc.logo = `/uploads/${file.filename}`
+  if (file?.publicUrl) doc.logo = file.publicUrl
   if (body.isManuallyClosed != null) {
     doc.isManuallyClosed = body.isManuallyClosed === true || body.isManuallyClosed === 'true'
   }
@@ -247,7 +247,7 @@ function productDoc(body, file) {
     lowStockThreshold: Number(body.lowStockThreshold ?? 5),
     isAvailable: body.isAvailable === undefined ? true : body.isAvailable === true || body.isAvailable === 'true',
   }
-  if (file) doc.images = [`/uploads/${file.filename}`]
+  if (file?.publicUrl) doc.images = [file.publicUrl]
   else if (body.image) doc.images = [body.image]
   return doc
 }
@@ -358,6 +358,7 @@ function inventoryItem(product) {
     lowStockThreshold: product.lowStockThreshold,
     status: product.stock <= 0 ? 'OUT' : product.stock <= product.lowStockThreshold ? 'LOW' : 'IN',
     isAvailable: product.isAvailable,
+    updatedAt: product.updatedAt,
   }
 }
 
@@ -366,8 +367,9 @@ export const inventory = asyncHandler(async (req, res) => {
   const products = await Product.find({ shop: shop._id }).populate('category', 'name').sort({ stock: 1, name: 1 })
   const movements = await InventoryMovement.find({ shop: shop._id })
     .populate('product', 'name')
+    .populate('order', 'orderNumber')
     .sort({ createdAt: -1 })
-    .limit(12)
+    .limit(20)
   send(res, { products: products.map(inventoryItem), movements })
 })
 

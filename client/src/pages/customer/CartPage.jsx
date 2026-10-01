@@ -15,7 +15,7 @@ export default function CartPage() {
   const cart = query.data?.cart
   const subtotal = (cart?.items || []).reduce((sum, item) => sum + item.price * item.quantity, 0)
   if (!cart?.items?.length) {
-    return <EmptyState title="Your cart is empty" body="Discover something nearby." action={<Link to="/explore"><Button>Explore shops</Button></Link>} />
+    return <EmptyState title="Your cart is waiting." body="Add something from a nearby shop." action={<Link to="/explore"><Button>Start shopping</Button></Link>} />
   }
   return (
     <div className="grid gap-6 lg:grid-cols-[1.4fr_0.8fr]">
@@ -42,8 +42,11 @@ export default function CartPage() {
         <h2 className="font-semibold">Summary</h2>
         <p className="mt-3 flex justify-between text-sm"><span>Subtotal</span><span>{formatINR(subtotal)}</span></p>
         <p className="mt-1 text-xs text-muted">Delivery fee and tax are calculated at checkout.</p>
-        <Link to="/checkout" className="mt-5 block"><Button variant="brand" className="w-full">Checkout</Button></Link>
+        <Link to="/checkout" className="mt-5 hidden md:block"><Button variant="brand" className="w-full">Checkout</Button></Link>
       </aside>
+      <div className="fixed inset-x-0 bottom-16 z-30 border-t border-line bg-white p-3 md:hidden">
+        <Link to="/checkout"><Button variant="brand" className="w-full">Checkout · {formatINR(subtotal)}</Button></Link>
+      </div>
     </div>
   )
 }

@@ -1,6 +1,7 @@
 import 'dotenv/config'
 import bcrypt from 'bcryptjs'
 import mongoose from 'mongoose'
+import { pathToFileURL } from 'url'
 import { connectDb } from '../config/db.js'
 import User from '../models/User.js'
 import Category from '../models/Category.js'
@@ -36,8 +37,7 @@ const img = {
   bakery: 'https://images.unsplash.com/photo-1517433670267-08bbd4be890f?auto=format&fit=crop&w=1400&q=80',
 }
 
-async function main() {
-  await connectDb()
+export async function seedDemo() {
   await Promise.all([
     User.deleteMany({}),
     Category.deleteMany({}),
@@ -659,12 +659,18 @@ async function main() {
   })
 
   console.log('Seed complete')
-  await mongoose.disconnect()
-  process.exit(0)
 }
 
-main().catch(async (error) => {
-  console.error(error)
-  await mongoose.disconnect()
-  process.exit(1)
-})
+const isCli = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href
+
+if (isCli) {
+  connectDb()
+    .then(() => seedDemo())
+    .then(() => mongoose.disconnect())
+    .then(() => process.exit(0))
+    .catch(async (error) => {
+      console.error(error)
+      await mongoose.disconnect()
+      process.exit(1)
+    })
+}

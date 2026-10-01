@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { shopOwnerApi } from '../../services'
 import { usePageMeta } from '../../hooks/usePageMeta'
-import { formatINR, formatStatus } from '../../lib/format'
+import { formatINR, formatStatus, greeting } from '../../lib/format'
 import EmptyState from '../../components/ui/EmptyState'
 import Button from '../../components/ui/Button'
 
@@ -14,31 +14,37 @@ export default function ShopDashboardPage() {
     return <EmptyState title="Register your shop" body={dashboard.error.message} action={<Link to="/shop/register"><Button>Register shop</Button></Link>} />
   }
   const data = dashboard.data
-  if (!data) return <p className="text-sm text-muted">Loading overview…</p>
+  if (!data) return <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 4 }, (_, index) => <div key={index} className="h-24 animate-pulse bg-line/70" />)}</div>
+  const openLabel = data.shop.approvalStatus === 'APPROVED' ? (data.shop.isOpen ? 'Open now' : 'Closed') : formatStatus(data.shop.approvalStatus)
   const cards = [
-    ['Today’s orders', data.todayOrders],
     ['Today’s revenue', formatINR(data.todayRevenue)],
-    ['Pending orders', data.pendingOrders],
-    ['Products', data.products],
+    ['Orders', data.todayOrders],
+    ['Average order value', formatINR(data.averageOrder)],
     ['Low stock', data.lowStock],
-    ['Average order', formatINR(data.averageOrder)],
   ]
   return (
     <div>
-      <h1 className="text-2xl font-semibold">{data.shop.name}</h1>
-      <p className="mt-1 text-sm text-muted">{data.shop.approvalStatus === 'APPROVED' ? (data.shop.isOpen ? 'Open now' : 'Closed') : formatStatus(data.shop.approvalStatus)}</p>
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-sm text-muted">{greeting()}</p>
+          <h1 className="mt-1 text-2xl font-semibold">{data.shop.name}</h1>
+          <p className="mt-1 text-sm">{openLabel}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Link to="/shop/inventory"><Button>Add product</Button></Link>
+          <Link to="/shop/orders"><Button variant="ghost">View orders</Button></Link>
+        </div>
+      </div>
+      <div className="mt-6 grid gap-px border border-line bg-line sm:grid-cols-2 xl:grid-cols-4">
         {cards.map(([label, value]) => (
-          <article key={label} className="rounded-2xl border border-line bg-white p-4">
+          <article key={label} className="bg-white p-4">
             <p className="text-sm text-muted">{label}</p>
             <p className="mt-1 text-2xl font-semibold">{value}</p>
           </article>
         ))}
       </div>
-      <div className="mt-5 flex flex-wrap gap-2">
-        <Link to="/shop/inventory"><Button>Add product</Button></Link>
-        <Link to="/shop/orders"><Button variant="ghost">View orders</Button></Link>
-        <Link to="/shop/settings"><Button variant="ghost">Edit shop</Button></Link>
+      <div className="mt-4">
+        <Link to="/shop/settings" className="text-sm text-info">Shop settings</Link>
       </div>
       {data.attention ? (
         <section className="mt-6">
@@ -64,14 +70,14 @@ export default function ShopDashboardPage() {
         </section>
       ) : null}
       <section className="mt-6 rounded-2xl border border-line bg-white p-4">
-        <h2 className="font-semibold">Order trend</h2>
+        <h2 className="font-semibold">Revenue</h2>
         <div className="mt-4 h-56">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data.trend}>
               <XAxis dataKey="date" tick={{ fontSize: 12 }} />
               <YAxis allowDecimals={false} />
               <Tooltip />
-              <Bar dataKey="orders" fill="#111827" radius={4} />
+              <Bar dataKey="revenue" fill="#111827" radius={2} />
             </BarChart>
           </ResponsiveContainer>
         </div>

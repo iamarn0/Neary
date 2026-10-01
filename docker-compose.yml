@@ -1,0 +1,31 @@
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - neare-mongo:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ ping: 1 })"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  app:
+    image: ghcr.io/iamarn0/neary:latest
+    pull_policy: always
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    env_file:
+      - server/.env
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      MONGO_URI: mongodb://mongo:27017/neare
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+volumes:
+  neare-mongo:
