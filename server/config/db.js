@@ -10,11 +10,12 @@ export async function connectDb() {
   let lastError
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      await mongoose.connect(uri)
+      await mongoose.connect(uri, { serverSelectionTimeoutMS: 10000 })
       console.log('MongoDB connected')
       return
     } catch (error) {
       lastError = error
+      console.error(`MongoDB connection attempt ${attempt}/${attempts} failed: ${error.message}`)
       if (attempt === attempts) break
       await new Promise((resolve) => setTimeout(resolve, 2000))
     }

@@ -76,13 +76,18 @@ if (process.env.NODE_ENV === 'production' && !cloudinaryConfigured()) {
 }
 console.log(`Image storage: ${cloudinaryConfigured() ? 'cloudinary' : 'local disk'}`)
 
-await connectDb()
-if (process.env.SEED_IF_EMPTY === 'true' && (await User.countDocuments()) === 0) {
-  console.log('Database is empty. Seeding demo data.')
-  await seedDemo()
-}
-await resumeDemoTracking(io)
-
-server.listen(port, () => {
-  console.log(`NEARE API listening on ${port}`)
+server.listen(port, '0.0.0.0', () => {
+  console.log(`NEARE API listening on 0.0.0.0:${port}`)
 })
+
+try {
+  await connectDb()
+  if (process.env.SEED_IF_EMPTY === 'true' && (await User.countDocuments()) === 0) {
+    console.log('Database is empty. Seeding demo data.')
+    await seedDemo()
+  }
+  await resumeDemoTracking(io)
+} catch (error) {
+  console.error('Startup failed:', error)
+  process.exit(1)
+}
